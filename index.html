@@ -1,0 +1,1065 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AROCUM Application Portal</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <!-- Firebase SDKs -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import {
+            getAuth,
+            signInWithEmailAndPassword,
+            createUserWithEmailAndPassword,
+            signOut,
+            onAuthStateChanged
+        } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, collection, addDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        // Import Firebase Storage functions
+        import { getStorage, ref, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-storage.js";
+
+
+        // Your specific Firebase configuration
+        const firebaseConfig = {
+            apiKey: "AIzaSyCpDryn8F6WS4oCbjX0hMTKbUP-jO2y1ds",
+            authDomain: "arocom-acce1.firebaseapp.com",
+            projectId: "arocom-acce1",
+            storageBucket: "arocom-acce1.firebasestorage.app",
+            messagingSenderId: "588294821126",
+            appId: "1:588294821126:web:3525430d45a977d6cffa87",
+            measurementId: "G-EZYEKRYP96"
+        };
+
+        // Extract appId from the provided config
+        const appId = firebaseConfig.appId;
+
+        let app, db, auth, storage; // Added storage variable
+        let currentUserId = null;
+
+        // --- UI State Management (Moved to global scope and exposed on window) ---
+        // These functions need to be available immediately when Firebase initializes
+        // and calls onAuthStateChanged, and also to other scripts.
+        window.showAuthPage = function() { // Exposed on window
+            const authPage = document.getElementById('authPage');
+            const applicationFormPage = document.getElementById('applicationFormPage');
+            if (authPage && applicationFormPage) {
+                authPage.style.display = 'block';
+                applicationFormPage.style.display = 'none';
+            }
+        }
+
+        window.showApplicationForm = function() { // Exposed on window
+            const authPage = document.getElementById('authPage');
+            const applicationFormPage = document.getElementById('applicationFormPage');
+            if (authPage && applicationFormPage) {
+                authPage.style.display = 'none';
+                applicationFormPage.style.display = 'block';
+            }
+        }
+
+        // Custom message box function (Moved to global scope and exposed on window)
+        window.showMessage = function(title, message, type) { // Exposed on window
+            const messageBox = document.getElementById('messageBox');
+            const overlay = document.getElementById('overlay');
+            const messageBoxContent = document.getElementById('messageBoxContent');
+
+            if (messageBox && overlay && messageBoxContent) {
+                messageBoxContent.innerHTML = `<h4>${title}</h4><p>${message}</p>`;
+                messageBox.className = `message-box show ${type}`;
+                overlay.className = 'overlay show';
+
+                document.getElementById('messageBoxClose').onclick = () => {
+                    messageBox.className = 'message-box';
+                    overlay.className = 'overlay';
+                };
+            } else {
+                console.error("Message box elements not found.");
+                // Fallback to alert if message box elements aren't ready
+                alert(`${title}\n${message}`);
+            }
+        }
+
+
+        async function initializeFirebase() {
+            try {
+                app = initializeApp(firebaseConfig);
+                db = getFirestore(app);
+                auth = getAuth(app);
+                storage = getStorage(app); // Initialize Firebase Storage
+
+                onAuthStateChanged(auth, (user) => {
+                    if (user) {
+                        currentUserId = user.uid;
+                        console.log("User is signed in:", currentUserId);
+                        window.showApplicationForm(); // Call through window
+                    } else {
+                        currentUserId = null;
+                        console.log("User is signed out.");
+                        window.showAuthPage(); // Call through window
+                    }
+                });
+
+                console.log("Firebase initialized.");
+            } catch (error) {
+                console.error("Error initializing Firebase or authenticating:", error);
+                window.showMessage('Error', 'Failed to initialize application. Please try again later.', 'error'); // Call through window
+            }
+        }
+
+        initializeFirebase();
+
+        window.firebaseApp = app;
+        window.firebaseDb = db;
+        window.firebaseAuth = auth;
+        window.firebaseStorage = storage; // Expose storage
+        window.getCurrentUserId = () => currentUserId;
+        window.addDoc = addDoc;
+        window.collection = collection;
+        window.signInWithEmailAndPassword = signInWithEmailAndPassword;
+        window.createUserWithEmailAndPassword = createUserWithEmailAndPassword;
+        window.signOut = signOut;
+        window.appId = appId;
+        window.ref = ref; // Expose Storage functions
+        window.uploadBytes = uploadBytes;
+        window.getDownloadURL = getDownloadURL;
+    </script>
+
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f8f9fa; /* Lighter, more neutral background */
+            color: #343a40; /* Darker, more professional text color */
+            line-height: 1.6;
+        }
+        .container {
+            max-width: 960px;
+            margin: 2rem auto; /* More vertical spacing */
+            padding: 2.5rem; /* Increased padding */
+            background-color: #ffffff;
+            border-radius: 12px; /* Slightly less rounded for a more formal look */
+            box-shadow: 0 6px 20px rgba(0, 0, 0, 0.08); /* Softer, more diffused shadow */
+        }
+        .form-section-title {
+            font-size: 1.6rem; /* Slightly larger, more prominent */
+            font-weight: 700;
+            color: #212529; /* Very dark gray for strong contrast */
+            margin-bottom: 1.8rem;
+            border-bottom: 2px solid #e9ecef; /* Subtle border */
+            padding-bottom: 0.8rem;
+        }
+        .form-group {
+            margin-bottom: 1.25rem; /* Consistent spacing */
+        }
+        .form-label {
+            display: block;
+            font-weight: 600;
+            color: #495057; /* Dark gray for labels */
+            margin-bottom: 0.5rem;
+            font-size: 0.95rem;
+        }
+        .form-input, .form-textarea, .form-select {
+            width: 100%;
+            padding: 0.8rem 1rem; /* More comfortable padding */
+            border: 1px solid #ced4da; /* Neutral border color */
+            border-radius: 6px; /* Less rounded for formality */
+            font-size: 0.95rem;
+            color: #495057;
+            background-color: #f8f9fa; /* Light input background */
+            transition: border-color 0.2s ease-in-out, box-shadow 0.2s ease-in-out;
+        }
+        .form-input:focus, .form-textarea:focus, .form-select:focus {
+            outline: none;
+            border-color: #007bff; /* Professional blue on focus */
+            box-shadow: 0 0 0 0.2rem rgba(0, 123, 255, 0.25); /* Subtle blue glow */
+            background-color: #ffffff;
+        }
+        .form-textarea {
+            min-height: 100px; /* Taller textarea */
+            resize: vertical;
+        }
+        .signature-input {
+            border-bottom: 1px dashed #adb5bd; /* More subtle dashed line */
+            padding-bottom: 0.25rem;
+            width: 100%;
+            background: none;
+            border-radius: 0;
+            padding-left: 0;
+            padding-right: 0;
+            font-style: italic; /* Hint for signature */
+        }
+        .submit-button {
+            background-color: #007bff; /* Primary action blue */
+            color: #fff;
+            padding: 0.9rem 2.2rem; /* Generous padding */
+            border-radius: 6px;
+            font-size: 1.05rem;
+            font-weight: 600; /* Slightly less bold than before */
+            cursor: pointer;
+            transition: background-color 0.2s ease-in-out, transform 0.1s ease-in-out, box-shadow 0.2s ease-in-out;
+            border: none;
+            box-shadow: 0 4px 12px rgba(0, 123, 255, 0.25); /* Professional shadow */
+        }
+        .submit-button:hover {
+            background-color: #0056b3; /* Darker blue on hover */
+            transform: translateY(-1px);
+            box-shadow: 0 6px 15px rgba(0, 123, 255, 0.35);
+        }
+        .submit-button:active {
+            transform: translateY(0);
+            box-shadow: 0 2px 8px rgba(0, 123, 255, 0.2);
+        }
+        .logo {
+            max-width: 220px; /* Slightly larger logo */
+            margin: 0 auto 2.5rem; /* More spacing */
+        }
+        .header-text {
+            font-size: 2.2rem; /* Larger and more impactful */
+            font-weight: 800;
+            color: #212529; /* Strong header color */
+            text-align: center;
+            margin-bottom: 0.8rem;
+        }
+        .subheader-text {
+            font-size: 1.3rem; /* More substantial */
+            font-weight: 500; /* Less bold */
+            color: #6c757d; /* Muted gray for subheader */
+            text-align: center;
+            margin-bottom: 2.5rem;
+        }
+        .form-title-main {
+            font-size: 1.8rem; /* Prominent form title */
+            font-weight: 700;
+            color: #343a40;
+            text-align: center;
+            margin-bottom: 2.5rem;
+            padding-bottom: 1rem;
+            border-bottom: 1px solid #dee2e6; /* Clean separator */
+        }
+        .table-header {
+            background-color: #e9ecef; /* Light gray for table headers */
+            color: #495057;
+            font-weight: 700;
+            padding: 0.9rem 1rem; /* More padding */
+            text-align: left;
+            border-bottom: 1px solid #dee2e6;
+            font-size: 0.9rem;
+        }
+        .table-cell {
+            padding: 0.9rem 1rem;
+            border-bottom: 1px solid #f2f2f2; /* Very light border for rows */
+        }
+        .disclaimer {
+            font-size: 0.85rem; /* Slightly larger */
+            color: #6c757d;
+            margin-top: 1.2rem;
+            line-height: 1.5;
+        }
+        .file-input-wrapper {
+            border: 1px solid #ced4da; /* Solid border */
+            border-radius: 6px;
+            padding: 1.2rem; /* More padding */
+            text-align: center;
+            cursor: pointer;
+            transition: border-color 0.2s ease-in-out, background-color 0.2s ease-in-out;
+            background-color: #f8f9fa;
+            display: flex; /* Use flexbox for alignment */
+            flex-direction: column; /* Stack children vertically */
+            align-items: center; /* Center items horizontally */
+            justify-content: center; /* Center items vertically */
+            min-height: 150px; /* Minimum height for the drop area */
+            position: relative; /* For absolute positioning of image */
+            overflow: hidden; /* Hide overflow for rounded corners */
+        }
+        .file-input-wrapper:hover {
+            border-color: #007bff;
+            background-color: #e9f5ff; /* Light blue hover */
+        }
+        .file-input-wrapper input[type="file"] {
+            position: absolute; /* Make it cover the whole area */
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            opacity: 0; /* Hide the actual input */
+            cursor: pointer;
+            z-index: 10; /* Ensure it's clickable */
+        }
+        .file-input-label {
+            font-weight: 600;
+            color: #007bff; /* Blue for call to action */
+            display: block;
+            margin-bottom: 0.5rem;
+            font-size: 0.9rem;
+            z-index: 5; /* Ensure text is above image if image is smaller */
+        }
+        .file-input-text {
+            font-size: 0.85rem;
+            color: #6c757d;
+            z-index: 5;
+        }
+        .file-input-preview {
+            max-width: 100%;
+            max-height: 120px; /* Control image size */
+            border-radius: 4px;
+            object-fit: contain; /* Ensure image fits without cropping */
+            margin-top: 10px; /* Space between text and image */
+            display: none; /* Hidden by default */
+            z-index: 1; /* Behind text */
+        }
+        .file-input-wrapper.has-file .file-input-label,
+        .file-input-wrapper.has-file .file-input-text {
+            display: none; /* Hide text when image is present */
+        }
+        .file-input-wrapper.has-file .file-input-preview {
+            display: block; /* Show image when present */
+        }
+
+
+        /* Message Box Styles (refined) */
+        .message-box {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background-color: #ffffff;
+            border-radius: 8px;
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.15);
+            padding: 1.8rem;
+            z-index: 1000;
+            min-width: 300px;
+            max-width: 90%;
+            text-align: center;
+            opacity: 0;
+            visibility: hidden;
+            transition: opacity 0.3s ease-in-out, visibility 0.3s ease-in-out;
+        }
+        .message-box.show {
+            opacity: 1;
+            visibility: visible;
+        }
+        .message-box h4 {
+            font-size: 1.4rem;
+            font-weight: 700;
+            margin-bottom: 0.8rem;
+        }
+        .message-box p {
+            font-size: 0.95rem;
+            margin-bottom: 1.2rem;
+            color: #555;
+        }
+        .message-box.success h4 { color: #28a745; } /* Green for success */
+        .message-box.error h4 { color: #dc3545; } /* Red for error */
+        .message-box.info h4 { color: #17a2b8; } /* Teal for info */
+        .message-box button {
+            background-color: #6c757d; /* Muted gray for OK button */
+            color: #fff;
+            padding: 0.5rem 1.2rem;
+            border-radius: 5px;
+            border: none;
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+        .message-box button:hover {
+            background-color: #5a6268;
+        }
+        .overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.5);
+            z-index: 999;
+            opacity: 0;
+            visibility: hidden;
+            transition: opacity 0.3s ease-in-out, visibility 0.3s ease-in-out;
+        }
+        .overlay.show {
+            opacity: 1;
+            visibility: visible;
+        }
+        .loading-spinner {
+            border: 3px solid rgba(0, 123, 255, 0.2);
+            border-top: 3px solid #007bff;
+            border-radius: 50%;
+            width: 25px;
+            height: 25px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 1rem;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        /* Mobile specific adjustments */
+        @media (max-width: 767px) {
+            .container {
+                margin: 0.8rem;
+                padding: 1.5rem;
+            }
+            .form-section-title {
+                font-size: 1.4rem;
+                margin-bottom: 1.2rem;
+                padding-bottom: 0.5rem;
+            }
+            .form-group {
+                margin-bottom: 0.9rem;
+            }
+            .form-label {
+                font-size: 0.9rem;
+                margin-bottom: 0.3rem;
+            }
+            .form-input, .form-textarea, .form-select {
+                padding: 0.6rem 0.8rem;
+                font-size: 0.88rem;
+                border-radius: 5px;
+            }
+            .form-textarea {
+                min-height: 80px;
+            }
+            .submit-button {
+                padding: 0.7rem 1.8rem;
+                font-size: 1rem;
+                border-radius: 5px;
+            }
+            .logo {
+                max-width: 180px;
+                margin-bottom: 2rem;
+            }
+            .header-text {
+                font-size: 1.9rem;
+                margin-bottom: 0.5rem;
+            }
+            .subheader-text {
+                font-size: 1.1rem;
+                margin-bottom: 2rem;
+            }
+            .form-title-main {
+                font-size: 1.5rem;
+                margin-bottom: 2rem;
+                padding-bottom: 0.8rem;
+            }
+            .table-header, .table-cell {
+                padding: 0.7rem 0.8rem;
+                font-size: 0.8rem;
+            }
+            .disclaimer {
+                font-size: 0.8rem;
+                margin-top: 1rem;
+            }
+            .file-input-wrapper {
+                padding: 1rem;
+                border-radius: 5px;
+            }
+            .file-input-label {
+                font-size: 0.8rem;
+            }
+            .file-input-text {
+                font-size: 0.75rem;
+            }
+            .grid-cols-1.md\:grid-cols-2 {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <!-- Authentication Page -->
+    <div id="authPage" class="container" style="display: none;">
+        <div class="text-center mb-8">
+            <img src="download.png" alt="AROCOM Logo" class="logo">
+            <h1 class="header-text">AROCUM GLOBAL MERCHANDISE LIMITED</h1>
+            <h2 class="subheader-text">Application Portal</h2>
+            <p class="form-title-main">Sign Up or Log In</p>
+        </div>
+
+        <div class="p-5 sm:p-7 border border-gray-200 rounded-xl shadow-sm">
+            <div class="form-group">
+                <label for="authEmail" class="form-label">Email:</label>
+                <input type="email" id="authEmail" class="form-input" placeholder="your.email@example.com" required>
+            </div>
+            <div class="form-group">
+                <label for="authPassword" class="form-label">Password:</label>
+                <input type="password" id="authPassword" class="form-input" placeholder="********" required>
+            </div>
+            <div class="form-group text-center mt-6">
+                <button type="button" id="loginButton" class="submit-button !bg-blue-600 hover:!bg-blue-700 mr-4">Log In</button>
+                <button type="button" id="signupButton" class="submit-button !bg-green-600 hover:!bg-green-700">Sign Up</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Application Form Page -->
+    <div id="applicationFormPage" class="container" style="display: none;">
+        <div class="text-center mb-8 sm:mb-10">
+            <img src="download.png" alt="AROCOM Logo" class="logo">
+            <h1 class="header-text">AROCUM GLOBAL MERCHANDISE LIMITED</h1>
+            <h2 class="subheader-text">ASSET ACQUISITION SCHEME FOR POLICE OFFICERS</h2>
+            <p class="form-title-main">EXPRESSION OF INTEREST FORM</p>
+            <button id="logoutButton" class="submit-button !bg-red-600 hover:!bg-red-700 !text-sm !py-2 !px-4 mt-2">Log Out</button>
+        </div>
+
+        <form id="applicationForm">
+            <!-- PART A: PERSONAL INFORMATION -->
+            <div class="form-section mb-8 sm:mb-10 p-5 sm:p-7 border border-gray-200 rounded-xl shadow-sm">
+                <h3 class="form-section-title">PART A: PERSONAL INFORMATION</h3>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6">
+                    <div class="form-group md:col-span-2">
+                        <label class="form-label">Affix your most recent passport photograph here:</label>
+                        <div class="file-input-wrapper">
+                            <input type="file" id="passportPhoto" name="passportPhoto" accept="image/*" required>
+                            <img id="passportPhotoPreview" class="file-input-preview" src="#" alt="Passport Photo Preview">
+                            <label for="passportPhoto" class="file-input-label">Drag & Drop or Click to Upload</label>
+                            <p class="file-input-text" id="passportPhotoFileName">No file chosen</p>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label for="name" class="form-label">Name:</label>
+                        <input type="text" id="name" name="name" class="form-input" placeholder="Full Name (e.g., John Doe)" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="mobileNumber" class="form-label">Mobile Number:</label>
+                        <input type="tel" id="mobileNumber" name="mobileNumber" class="form-input" placeholder="e.g., +2348012345678" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="forceApNumber" class="form-label">Force/AP Number:</label>
+                        <input type="text" id="forceApNumber" name="forceApNumber" class="form-input" placeholder="Enter Force/AP Number" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="gpfNumber" class="form-label">GPF Number:</label>
+                        <input type="text" id="gpfNumber" name="gpfNumber" class="form-input" placeholder="Enter GPF Number" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="employmentCode" class="form-label">Employment Code:</label>
+                        <input type="text" id="employmentCode" name="employmentCode" class="form-input" placeholder="Enter Employment Code" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="rank" class="form-label">Rank:</label>
+                        <input type="text" id="rank" name="rank" class="form-input" placeholder="Enter Rank (e.g., Sergeant)" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="presentServicePoint" class="form-label">Present Service Point:</label>
+                        <input type="text" id="presentServicePoint" name="presentServicePoint" class="form-input" placeholder="Enter Service Point" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="payPoint" class="form-label">Pay Point:</label>
+                        <input type="text" id="payPoint" name="payPoint" class="form-input" placeholder="Enter Pay Point" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="dateOfEnrolment" class="form-label">Date of Enrolment:</label>
+                        <input type="date" id="dateOfEnrolment" name="dateOfEnrolment" class="form-input" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="serviceTerminalDate" class="form-label">Service Terminal Date:</label>
+                        <input type="date" id="serviceTerminalDate" name="serviceTerminalDate" class="form-input" required>
+                    </div>
+                    <div class="form-group md:col-span-2">
+                        <label for="presentMonthlySalary" class="form-label">Present Monthly Salary (Amount in words):</label>
+                        <input type="text" id="presentMonthlySalary" name="presentMonthlySalary" class="form-input" placeholder="e.g., One Hundred Thousand Naira Only" required>
+                    </div>
+                    <div class="form-group md:col-span-2">
+                        <label for="previousFinancialCommitments" class="form-label">State details of previous financial commitment(s) and credit facility(s) obtained that you are still paying:</label>
+                        <textarea id="previousFinancialCommitments" name="previousFinancialCommitments" class="form-textarea" placeholder="Describe any previous commitments and their details..." required></textarea>
+                    </div>
+                    <div class="form-group md:col-span-2">
+                        <label for="netMonthlySalary" class="form-label">Net monthly salary (Amount in words):</label>
+                        <input type="text" id="netMonthlySalary" name="netMonthlySalary" class="form-input" placeholder="e.g., Eighty Thousand Naira Only" required>
+                    </div>
+                    <div class="form-group md:col-span-2">
+                        <label for="assetDetails" class="form-label">State details including type(s) and brand(s) of the asset(s) demanded with the eighteen (18) months installment price(s) and the amount of monthly repayment as per asset price(s):</label>
+                        <textarea id="assetDetails" name="assetDetails" class="form-textarea" placeholder="e.g., 1. Toyota Camry 2020 (N10,000,000, N555,555.56 monthly repayment)" required></textarea>
+                        <p class="disclaimer"><em>(Note: ensure you check our price lists carefully in the process of filling your request)</em></p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- PART B: PRODUCT DETAILS -->
+            <div class="form-section mb-8 sm:mb-10 p-5 sm:p-7 border border-gray-200 rounded-xl shadow-sm">
+                <h3 class="form-section-title">PART B: PRODUCT DETAILS</h3>
+                <div class="overflow-x-auto">
+                    <table class="min-w-full bg-white border border-gray-200 rounded-lg overflow-hidden">
+                        <thead>
+                            <tr>
+                                <th class="table-header w-1/2">DETAILS OF PRODUCT(S)</th>
+                                <th class="table-header text-right w-1/4">18 MONTHS INSTALLMENT PRICE (N)</th>
+                                <th class="table-header text-right w-1/4">MONTHLY REPAYMENT (N)</th>
+                            </tr>
+                        </thead>
+                        <tbody id="productTableBody">
+                            <!-- Product rows will be dynamically added/managed by JavaScript -->
+                            <!-- Total row is now explicitly added at the end of the tbody by JS for robustness -->
+                        </tbody>
+                    </table>
+                </div>
+                <div class="text-center mt-4">
+                    <button type="button" id="addProductRow" class="submit-button !bg-blue-600 hover:!bg-blue-700 !text-sm !py-2 !px-4">Add Product</button>
+                </div>
+                <div class="form-group mt-6">
+                    <label for="totalCostAssets" class="form-label">Total cost of asset(s) demanded (Amount in words):</label>
+                    <input type="text" id="totalCostAssets" name="totalCostAssets" class="form-input" placeholder="e.g., Five Million Naira Only" required>
+                </div>
+                <div class="form-group">
+                    <label for="monthlyRepaymentWords" class="form-label">Monthly Repayment (Amount in words):</label>
+                    <input type="text" id="monthlyRepaymentWords" name="monthlyRepaymentWords" class="form-input" placeholder="e.g., Three Hundred Thousand Naira Only" required>
+                </div>
+            </div>
+
+            <!-- PART C: DECLARATION BY APPLICANT -->
+            <div class="form-section mb-8 sm:mb-10 p-5 sm:p-7 border border-gray-200 rounded-xl shadow-sm">
+                <h3 class="form-section-title">PART C: DECLARATION BY APPLICANT</h3>
+                <p class="mb-4 text-gray-700">I, <input type="text" id="applicantDeclarationName" name="applicantDeclarationName" class="signature-input inline-block w-full sm:w-64 md:w-80" placeholder="Your Full Name" required> hereby declare that the information given above are true and very correct to the best of my knowledge and understanding.</p>
+                <p class="mb-4 text-gray-700">I wish to confirm my readiness to collect the afore-stated asset(s) at the above quoted price(s) on delivery and authorize Arocom Global Merchandise Limited to debit my salary in deduct the repayment from my monthly salary at source for the eighteen (18) months period into the account of Arocom Global Merchandise Limited in the designated bank amount at the time payment to my salary.</p>
+                <p class="mb-4 text-gray-700">I wish to state further that in-case of an unforeseen circumstances in the course of the repayment period that prevent me from my salary being debited at the period of the facility, the balance of the facility should be charged to my terminal benefit.</p>
+                <p class="mb-4 text-gray-700">I hereby state that the afore-stated instructions are given by me irrevocably and without the right of set-off of the instruction after collecting the asset(s) demanded.</p>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6 mt-6">
+                    <div class="form-group">
+                        <label for="applicantSignature" class="form-label">Applicant's Signature:</label>
+                        <input type="text" id="applicantSignature" name="applicantSignature" class="form-input" placeholder="Sign here or type name" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="declarationDate" class="form-label">Date:</label>
+                        <input type="date" id="declarationDate" name="declarationDate" class="form-input" required>
+                    </div>
+                </div>
+            </div>
+
+            <!-- PART D: CERTIFICATION OF THE FINANCE OFFICER IN-CHARGE OF THE STATE COMMAND -->
+            <div class="form-section mb-8 sm:mb-10 p-5 sm:p-7 border border-gray-200 rounded-xl shadow-sm">
+                <h3 class="form-section-title">PART D: CERTIFICATION OF THE FINANCE OFFICER IN-CHARGE OF THE STATE COMMAND</h3>
+                <p class="mb-4 text-gray-700">I, the Officer in-charge of payment of the salary and pension of the above applicant hereby certify that all the information given above and found them to be true, correct and satisfactory.</p>
+                <p class="mb-4 text-gray-700">The deductions shall be effected accordingly throughout the facility period.</p>
+            </div>
+
+            <!-- COMMAND FINANCE OFFICE -->
+            <div class="form-section mb-8 sm:mb-10 p-5 sm:p-7 border border-gray-200 rounded-xl shadow-sm">
+                <h3 class="form-section-title">COMMAND FINANCE OFFICE</h3>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6">
+                    <div class="form-group">
+                        <label for="commandName" class="form-label">Name:</label>
+                        <input type="text" id="commandName" name="commandName" class="form-input" placeholder="Name" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="commandPosition" class="form-label">Position:</label>
+                        <input type="text" id="commandPosition" name="commandPosition" class="form-input" placeholder="Position" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="commandRank" class="form-label">Rank:</label>
+                        <input type="text" id="commandRank" name="commandRank" class="form-input" placeholder="Rank" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="commandSignature" class="form-label">Signature:</label>
+                        <input type="text" id="commandSignature" name="commandSignature" class="form-input" placeholder="Sign here or type name" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="commandDate" class="form-label">Date:</label>
+                        <input type="date" id="commandDate" name="commandDate" class="form-input" required>
+                    </div>
+                </div>
+            </div>
+
+            <!-- FOR FURTHER INFORMATION, CONTACT -->
+            <div class="form-section mb-8 sm:mb-10 p-5 sm:p-7 border border-gray-200 rounded-xl shadow-sm bg-blue-50">
+                <h3 class="form-section-title text-blue-800 border-blue-400">FOR FURTHER INFORMATION, CONTACT</h3>
+                <p class="text-gray-700 mb-1"><strong>The General Manager,</strong></p>
+                <p class="text-gray-700 mb-1"><strong>AROCUM GLOBAL MERCHANDISE LIMITED</strong></p>
+                <p class="text-gray-700 mb-1">No. 20, Akintola Road, Opposite Federal Housing Estate Road,</p>
+                <p class="text-gray-700 mb-1">Ojooore, Abeokuta, Ogun State. // G.S.M: 0903611353</p>
+                <p class="text-gray-700 mb-4">Email: arocomglobalmerchandise@gmail.com</p>
+                <p class="text-gray-700 font-semibold text-center my-4">OR</p>
+                <p class="text-gray-700 mb-4"><strong>ANY OF OUR AMBASSADORS</strong> nearest to you across the Federation of Nigeria.</p>
+                <div class="form-group mt-4">
+                    <label for="ambassadorName" class="form-label">AMBASSADOR'S Name:</label>
+                    <input type="text" id="ambassadorName" name="ambassadorName" class="form-input" placeholder="Ambassador's Name" required>
+                </div>
+                <div class="form-group">
+                    <label for="ambassadorMobile" class="form-label">AMBASSADOR'S Mobile Number(s):</label>
+                    <input type="tel" id="ambassadorMobile" name="ambassadorMobile" class="form-input" placeholder="Ambassador's Mobile Number" required>
+                </div>
+            </div>
+
+            <div class="text-center mt-8 sm:mt-10">
+                <button type="submit" class="submit-button">Submit Application</button>
+            </div>
+        </form>
+    </div>
+
+    <!-- Message Box and Overlay -->
+    <div id="overlay" class="overlay"></div>
+    <div id="messageBox" class="message-box">
+        <div id="messageBoxContent"></div>
+        <button id="messageBoxClose">OK</button>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            // --- UI State Management ---
+            const authPage = document.getElementById('authPage');
+            const applicationFormPage = document.getElementById('applicationFormPage');
+
+            // Initially hide both pages. The onAuthStateChanged listener will determine which to show.
+            // This ensures a clean state before Firebase auth status is known.
+            authPage.style.display = 'none';
+            applicationFormPage.style.display = 'none';
+
+            // --- Authentication Logic ---
+            const authEmailInput = document.getElementById('authEmail');
+            const authPasswordInput = document.getElementById('authPassword');
+            const loginButton = document.getElementById('loginButton');
+            const signupButton = document.getElementById('signupButton');
+            const logoutButton = document.getElementById('logoutButton');
+
+            loginButton.addEventListener('click', async () => {
+                const email = authEmailInput.value;
+                const password = authPasswordInput.value;
+                if (!email || !password) {
+                    window.showMessage('Input Error', 'Please enter both email and password.', 'error');
+                    return;
+                }
+                window.showMessage('Logging In...', '<div class="loading-spinner"></div>', 'info');
+                try {
+                    await window.signInWithEmailAndPassword(window.firebaseAuth, email, password);
+                    window.showMessage('Success', 'Logged in successfully!', 'success');
+                } catch (error) {
+                    console.error("Login Error:", error);
+                    window.showMessage('Login Failed', error.message, 'error');
+                }
+            });
+
+            signupButton.addEventListener('click', async () => {
+                const email = authEmailInput.value;
+                const password = authPasswordInput.value;
+                if (!email || !password) {
+                    window.showMessage('Input Error', 'Please enter both email and password.', 'error');
+                    return;
+                }
+                window.showMessage('Signing Up...', '<div class="loading-spinner"></div>', 'info');
+                try {
+                    await window.createUserWithEmailAndPassword(window.firebaseAuth, email, password);
+                    window.showMessage('Success', 'Account created and logged in!', 'success');
+                } catch (error) {
+                    console.error("Sign Up Error:", error);
+                    window.showMessage('Sign Up Failed', error.message, 'error');
+                }
+            });
+
+            logoutButton.addEventListener('click', async () => {
+                try {
+                    await window.signOut(window.firebaseAuth);
+                    window.showMessage('Logged Out', 'You have been successfully logged out.', 'info');
+                } catch (error) {
+                    console.error("Logout Error:", error);
+                    window.showMessage('Logout Failed', error.message, 'error');
+                }
+            });
+
+            // --- Application Form Logic ---
+            const products = {
+                "refrigerators": [
+                    { name: "1 DOOR DCOOL HR-134MBS R6 SLV", price: 206064, installment: 298793, repayment: 16600 },
+                    { name: "1 DOOR DCOOL HR-185CS R6 SLV", price: 355418, installment: 515356, repayment: 28631 },
+                    { name: "2 DOOR DCOOL 80BEX R6 SLV", price: 265424, installment: 384865, repayment: 21381 },
+                    { name: "T MOUNT DD HRF-160 BEX R6 SLV", price: 354358, installment: 513820, repayment: 28546 },
+                    { name: "T MOUNT DD HRF-250 BLUX R6 SLV", price: 516220, installment: 748519, repayment: 41584 },
+                    { name: "T MOUNT DD HRF-355 BLUX R6 SLV", price: 674054, installment: 977378, repayment: 54299 }
+                ],
+                "freezers": [
+                    { name: "CHEST SML HTF-150HAS R6 SLV", price: 351602, installment: 509823, repayment: 28324 },
+                    { name: "CHEST SML HTF-200 R6 WHT", price: 372378, installment: 539948, repayment: 29997 },
+                    { name: "CHEST SML HTF-200HAS R6 SLV", price: 396546, installment: 574992, repayment: 31944 },
+                    { name: "CHEST LRG HTF-719HB R290 WHT", price: 1301362, installment: 1886975, repayment: 104832 },
+                    { name: "CHEST MED HTF-2191W R6 WHT", price: 473078, installment: 685963, repayment: 38109 },
+                    { name: "CHEST MED HTF-2191S R6 SLV", price: 489296, installment: 709479, repayment: 39416 },
+                    { name: "CHEST MED HTF-3191W R6 WHT", price: 605790, installment: 878396, repayment: 47800 },
+                    { name: "CHEST MED HTF-219TS R6 SLV", price: 591268, installment: 857339, repayment: 47630 },
+                    { name: "CHEST MED HTF-319TS R6 SLV", price: 732990, installment: 1062835, repayment: 59046 },
+                    { name: "CHEST MED HTF-4291S R6 SLV", price: 999262, installment: 1448930, repayment: 80496 }
+                ],
+                "generators": [
+                    { name: "TEC GEN PTR SML JUR 1500MS 1.25KVA/1.0KW", price: 76320, installment: 110664, repayment: 6148 },
+                    { name: "TEC GEN PTR SML BOBO 2800MS 2.5KVA/2.0KW", price: 370046, installment: 536567, repayment: 29809 },
+                    { name: "TEC GEN PTR SML BOBO 2800ES 2.5KVA/2.0KW", price: 444776, installment: 644926, repayment: 35829 },
+                    { name: "TEC GEN PTR MED HSTL 4000ES 3.75KVA/3.0KW", price: 475940, installment: 690113, repayment: 38340 },
+                    { name: "TEC GEN PTR SML OPT 2800ES 2.5KVA/2.0KW", price: 461842, installment: 669671, repayment: 37204 },
+                    { name: "TEC GEN PTR LRG OGA7500ES 6.25KVA/5.0KW", price: 907360, installment: 1315672, repayment: 73093 },
+                    { name: "TEC GEN PTR SML JNR 1500MS 1.25KVA/1.0KW", price: 246450, installment: 357353, repayment: 19853 }
+                ]
+            };
+
+            const productTableBody = document.getElementById('productTableBody');
+            const addProductRowButton = document.getElementById('addProductRow');
+
+            const totalPriceInput = document.createElement('input');
+            totalPriceInput.type = 'number';
+            totalPriceInput.step = '0.01';
+            totalPriceInput.className = 'form-input border-none p-0 text-right focus:ring-0 bg-transparent';
+            totalPriceInput.value = '0.00';
+            totalPriceInput.readOnly = true;
+            totalPriceInput.id = 'totalPrice';
+
+            const totalRepaymentInput = document.createElement('input');
+            totalRepaymentInput.type = 'number';
+            totalRepaymentInput.step = '0.01';
+            totalRepaymentInput.className = 'form-input border-none p-0 text-right focus:ring-0 bg-transparent';
+            totalRepaymentInput.value = '0.00';
+            totalRepaymentInput.readOnly = true;
+            totalRepaymentInput.id = 'totalRepayment';
+
+            const totalRow = document.createElement('tr');
+            totalRow.innerHTML = `
+                <td class="table-cell font-semibold bg-gray-100">TOTAL (N)</td>
+                <td class="table-cell text-right font-semibold bg-gray-100"></td>
+                <td class="table-cell text-right font-semibold bg-gray-100"></td>
+            `;
+            totalRow.children[1].appendChild(totalPriceInput);
+            totalRow.children[2].appendChild(totalRepaymentInput);
+            productTableBody.appendChild(totalRow);
+
+
+            function createProductRow() {
+                const row = document.createElement('tr');
+                // Removed 'required' from select to allow flexible product selection (at least one product overall)
+                row.innerHTML = `
+                    <td class="table-cell">
+                        <select class="form-select border-none p-0 focus:ring-0 product-select">
+                            <option value="">Select a Product</option>
+                            <optgroup label="Haier Thermocool Refrigerators">
+                                ${products.refrigerators.map(p => `<option value="${p.name}" data-installment="${p.installment}" data-repayment="${p.repayment}">${p.name}</option>`).join('')}
+                            </optgroup>
+                            <optgroup label="Haier Thermocool Freezers">
+                                ${products.freezers.map(p => `<option value="${p.name}" data-installment="${p.installment}" data-repayment="${p.repayment}">${p.name}</option>`).join('')}
+                            </optgroup>
+                            <optgroup label="TEC Generators">
+                                ${products.generators.map(p => `<option value="${p.name}" data-installment="${p.installment}" data-repayment="${p.repayment}">${p.name}</option>`).join('')}
+                            </optgroup>
+                        </select>
+                    </td>
+                    <td class="table-cell">
+                        <input type="number" step="0.01" class="form-input border-none p-0 text-right focus:ring-0 product-installment" placeholder="0.00" readonly>
+                    </td>
+                    <td class="table-cell">
+                        <input type="number" step="0.01" class="form-input border-none p-0 text-right focus:ring-0 product-repayment" placeholder="0.00" readonly>
+                    </td>
+                `;
+                productTableBody.insertBefore(row, totalRow);
+            }
+
+            for (let i = 0; i < 3; i++) {
+                createProductRow();
+            }
+
+            addProductRowButton.addEventListener('click', createProductRow);
+
+            function updateTotals() {
+                let totalInstallmentPrice = 0;
+                let totalMonthlyRepayment = 0;
+
+                const installmentInputs = productTableBody.querySelectorAll('.product-installment');
+                const repaymentInputs = productTableBody.querySelectorAll('.product-repayment');
+
+                installmentInputs.forEach(input => {
+                    const value = parseFloat(input.value);
+                    if (!isNaN(value)) {
+                        totalInstallmentPrice += value;
+                    }
+                });
+
+                repaymentInputs.forEach(input => {
+                    const value = parseFloat(input.value);
+                    if (!isNaN(value)) {
+                        totalMonthlyRepayment += value;
+                    }
+                });
+
+                if (totalPriceInput) {
+                    totalPriceInput.value = totalInstallmentPrice.toFixed(2);
+                }
+                if (totalRepaymentInput) {
+                    totalRepaymentInput.value = totalMonthlyRepayment.toFixed(2);
+                }
+            }
+
+            productTableBody.addEventListener('change', function(event) {
+                if (event.target.classList.contains('product-select')) {
+                    const selectedOption = event.target.selectedOptions[0];
+                    const row = event.target.closest('tr');
+                    const installmentInput = row.querySelector('.product-installment');
+                    const repaymentInput = row.querySelector('.product-repayment');
+
+                    if (selectedOption.value) {
+                        installmentInput.value = parseFloat(selectedOption.dataset.installment).toFixed(2);
+                        repaymentInput.value = parseFloat(selectedOption.dataset.repayment).toFixed(2);
+                    } else {
+                        installmentInput.value = '';
+                        repaymentInput.value = '';
+                    }
+                    updateTotals();
+                }
+            });
+
+            const nameInput = document.getElementById('name');
+            const applicantDeclarationNameInput = document.getElementById('applicantDeclarationName');
+
+            nameInput.addEventListener('input', function() {
+                applicantDeclarationNameInput.value = this.value;
+            });
+
+            const passportPhotoInput = document.getElementById('passportPhoto');
+            const passportPhotoFileName = document.getElementById('passportPhotoFileName');
+            const passportPhotoPreview = document.getElementById('passportPhotoPreview');
+            const fileInputWrapper = document.querySelector('.file-input-wrapper');
+
+
+            passportPhotoInput.addEventListener('change', function() {
+                if (this.files.length > 0) {
+                    const file = this.files[0];
+                    passportPhotoFileName.textContent = file.name;
+                    const reader = new FileReader();
+                    reader.onload = function(e) {
+                        passportPhotoPreview.src = e.target.result;
+                        fileInputWrapper.classList.add('has-file'); // Add class to show image, hide text
+                    };
+                    reader.readAsDataURL(file);
+                } else {
+                    passportPhotoFileName.textContent = 'No file chosen';
+                    passportPhotoPreview.src = '#'; // Clear preview
+                    fileInputWrapper.classList.remove('has-file'); // Remove class to hide image, show text
+                }
+            });
+
+            document.getElementById('applicationForm').addEventListener('submit', async function(event) {
+                event.preventDefault();
+
+                const requiredFields = document.querySelectorAll('#applicationForm [required]');
+                let allFieldsFilled = true;
+                requiredFields.forEach(field => {
+                    // Check for file input specifically, as its value is just the file name
+                    if (field.type === 'file') {
+                        if (field.hasAttribute('required') && field.files.length === 0) {
+                            allFieldsFilled = false;
+                            field.closest('.file-input-wrapper').classList.add('border-red-500');
+                        } else {
+                            field.closest('.file-input-wrapper').classList.remove('border-red-500');
+                        }
+                    } else if (!field.value.trim()) {
+                        allFieldsFilled = false;
+                        field.classList.add('border-red-500');
+                    } else {
+                        field.classList.remove('border-red-500');
+                    }
+                });
+
+                if (!allFieldsFilled) {
+                    window.showMessage('Validation Error', 'Please fill in all required fields.', 'error');
+                    return;
+                }
+
+                // New validation: Ensure at least one product is selected
+                const productsApplied = [];
+                const productRows = productTableBody.querySelectorAll('tr:not(:last-child)');
+                productRows.forEach(row => {
+                    const select = row.querySelector('.product-select');
+                    const installment = row.querySelector('.product-installment');
+                    const repayment = row.querySelector('.product-repayment');
+
+                    if (select && select.value) { // Only add if a product is actually selected
+                        productsApplied.push({
+                            name: select.value,
+                            installmentPrice: parseFloat(installment.value),
+                            monthlyRepayment: parseFloat(repayment.value)
+                        });
+                    }
+                });
+
+                if (productsApplied.length === 0) {
+                    window.showMessage('Validation Error', 'Please select at least one product from the list.', 'error');
+                    return;
+                }
+
+                window.showMessage('Submitting...', '<div class="loading-spinner"></div>', 'info');
+
+                try {
+                    // Ensure all necessary Firebase instances are initialized and available
+                    if (!window.firebaseDb || !window.firebaseAuth || !window.getCurrentUserId() || !window.firebaseStorage) {
+                        throw new Error("Firebase not fully initialized (DB, Auth, User, or Storage missing).");
+                    }
+
+                    const db = window.firebaseDb;
+                    const getUserId = window.getCurrentUserId;
+                    const addDoc = window.addDoc;
+                    const collection = window.collection;
+                    const appId = window.appId;
+                    const storage = window.firebaseStorage; // Get storage instance from window
+                    const ref = window.ref; // Get ref function from window
+                    const uploadBytes = window.uploadBytes; // Get uploadBytes function from window
+                    const getDownloadURL = window.getDownloadURL; // Get getDownloadURL function from window
+
+                    const userId = getUserId();
+                    const formData = new FormData(this);
+                    const applicationData = {};
+
+                    // Process all form fields
+                    for (let [key, value] of formData.entries()) {
+                        applicationData[key] = value;
+                    }
+
+                    // Handle passport photo upload
+                    let passportPhotoUrl = '';
+                    const photoFile = passportPhotoInput.files[0];
+                    if (photoFile) {
+                        // Create a unique file name for the storage path
+                        const fileName = `${Date.now()}_${photoFile.name}`;
+                        const storageRef = ref(storage, `passport_photos/${userId}/${fileName}`);
+                        console.log(`Attempting to upload photo to: passport_photos/${userId}/${fileName}`);
+
+                        // Upload the file
+                        const uploadTask = await uploadBytes(storageRef, photoFile);
+                        // Get the download URL
+                        passportPhotoUrl = await getDownloadURL(uploadTask.ref);
+                        console.log("Passport photo uploaded. URL:", passportPhotoUrl);
+                    }
+                    applicationData.passportPhotoUrl = passportPhotoUrl; // Save the URL in Firestore
+                    applicationData.passportPhoto = photoFile ? photoFile.name : 'No file selected'; // Keep filename for reference
+
+
+                    // Add the email used for authentication to the application data
+                    applicationData.authEmail = window.firebaseAuth.currentUser ? window.firebaseAuth.currentUser.email : 'N/A';
+
+
+                    applicationData.productsApplied = productsApplied; // Use the validated productsApplied array
+
+                    applicationData.submissionTimestamp = new Date();
+                    applicationData.status = 'Pending'; // Set status to Pending
+
+                    // Save to user-specific collection
+                    await addDoc(collection(db, `artifacts/${appId}/users/${userId}/applications`), applicationData);
+                    console.log("Document written to user-specific collection.");
+
+                    // Save to a central collection for admin dashboard
+                    await addDoc(collection(db, `artifacts/${appId}/all_applications`), applicationData);
+                    console.log("Document written to all_applications collection for admin.");
+
+                    window.showMessage(
+                        'Application Submitted!',
+                        'Your application has been submitted successfully. Your account status is currently pending review. You will be notified via email once your application has been reviewed, typically within 96 hours.',
+                        'success'
+                    );
+                    this.reset(); // Clear the form
+                    updateTotals(); // Reset totals
+                    passportPhotoFileName.textContent = 'No file chosen'; // Reset file input text
+                    passportPhotoPreview.src = '#'; // Clear image preview
+                    fileInputWrapper.classList.remove('has-file'); // Hide image preview area
+                } catch (e) {
+                    console.error("Error adding document: ", e);
+                    window.showMessage('Submission Failed', 'There was an error submitting your application. Please try again.', 'error');
+                }
+            });
+
+            updateTotals();
+        });
+    </script>
+</body>
+</html>

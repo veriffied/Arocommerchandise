@@ -1,0 +1,626 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AROCUM Admin Dashboard</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <!-- Firebase SDKs -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import {
+            getAuth,
+            signInWithEmailAndPassword,
+            signOut,
+            onAuthStateChanged
+        } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import {
+            getFirestore,
+            collection,
+            query,
+            onSnapshot,
+            doc,
+            updateDoc
+        } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // Your specific Firebase configuration
+        const firebaseConfig = {
+            apiKey: "AIzaSyCpDryn8F6WS4oCbjX0hMTKbUP-jO2y1ds",
+            authDomain: "arocom-acce1.firebaseapp.com",
+            projectId: "arocom-acce1",
+            storageBucket: "arocom-acce1.firebasestorage.app",
+            messagingSenderId: "588294821126",
+            appId: "1:588294821126:web:3525430d45a977d6cffa87",
+            measurementId: "G-EZYEKRYP96"
+        };
+
+        const appId = firebaseConfig.appId;
+
+        let app, db, auth;
+        let adminIsLoggedIn = false; // Track admin login state
+
+        // --- UI State Management ---
+        window.showLoginPage = function() {
+            console.log("Attempting to show login page.");
+            const loginPage = document.getElementById('loginPage');
+            const dashboardPage = document.getElementById('dashboardPage');
+            if (loginPage && dashboardPage) {
+                loginPage.style.display = 'block';
+                dashboardPage.style.display = 'none';
+                console.log("Login page displayed.");
+            } else {
+                console.error("Login page elements not found for display.");
+            }
+        }
+
+        window.showDashboardPage = function() {
+            console.log("Attempting to show dashboard page.");
+            const loginPage = document.getElementById('loginPage');
+            const dashboardPage = document.getElementById('dashboardPage');
+            if (loginPage && dashboardPage) {
+                loginPage.style.display = 'none';
+                dashboardPage.style.display = 'block';
+                console.log("Dashboard page displayed.");
+            } else {
+                console.error("Dashboard page elements not found for display.");
+            }
+        }
+
+        // Custom message box function
+        window.showMessage = function(title, message, type) {
+            const messageBox = document.getElementById('messageBox');
+            const overlay = document.getElementById('overlay');
+            const messageBoxContent = document.getElementById('messageBoxContent');
+
+            if (messageBox && overlay && messageBoxContent) {
+                messageBoxContent.innerHTML = `<h4>${title}</h4><p>${message}</p>`;
+                messageBox.className = `message-box show ${type}`;
+                overlay.className = 'overlay show';
+
+                document.getElementById('messageBoxClose').onclick = () => {
+                    messageBox.className = 'message-box';
+                    overlay.className = 'overlay';
+                };
+            } else {
+                console.error("Message box elements not found. Cannot display custom message.");
+                alert(`${title}\n${message}`); // Fallback to alert if message box elements aren't ready
+            }
+        }
+
+        async function initializeFirebase() {
+            console.log("Initializing Firebase...");
+            try {
+                app = initializeApp(firebaseConfig);
+                db = getFirestore(app);
+                auth = getAuth(app);
+                console.log("Firebase app, db, and auth initialized.");
+
+                // Expose Firebase functions to the window object for easier access in other scripts/event listeners
+                window.firebaseApp = app;
+                window.firebaseDb = db;
+                window.firebaseAuth = auth;
+                window.signInWithEmailAndPassword = signInWithEmailAndPassword;
+                window.signOut = signOut;
+                window.collection = collection;
+                window.query = query;
+                window.onSnapshot = onSnapshot;
+                window.doc = doc;
+                window.updateDoc = updateDoc;
+                window.appId = appId; // Expose appId as well
+
+                // Initial check and listener for auth state
+                onAuthStateChanged(auth, (user) => {
+                    console.log("onAuthStateChanged triggered. User:", user ? user.email : "null");
+                    if (user && user.email === 'admin@aro.co') { // Check if the logged-in user is the admin
+                        adminIsLoggedIn = true;
+                        console.log("Admin is signed in:", user.uid);
+                        window.showDashboardPage();
+                        fetchApplications(); // Start fetching applications
+                    } else {
+                        adminIsLoggedIn = false;
+                        console.log("User is not admin or signed out. Showing login page.");
+                        window.showLoginPage();
+                    }
+                });
+
+                console.log("Firebase initialization complete. Waiting for auth state.");
+            } catch (error) {
+                console.error("Error initializing Firebase:", error);
+                window.showMessage('Error', 'Failed to initialize application. Please try again later.', 'error');
+            }
+        }
+
+        // Function to fetch and display applications
+        function fetchApplications() {
+            console.log("Attempting to fetch applications. Admin logged in:", adminIsLoggedIn);
+            if (!adminIsLoggedIn) {
+                console.log("Not logged in as admin. Cannot fetch applications.");
+                return;
+            }
+
+            // Ensure db and appId are available from window object
+            const db = window.firebaseDb;
+            const appId = window.appId;
+
+            // IMPORTANT: Ensure your Firestore Security Rules allow read access to this path for 'admin@aro.co'
+            // Example rule:
+            // match /artifacts/{appId}/all_applications/{docId} {
+            //   allow read, update: if request.auth.token.email == 'admin@aro.co';
+            // }
+            const allApplicationsCollectionRef = window.collection(db, `artifacts/${appId}/all_applications`);
+            const q = window.query(allApplicationsCollectionRef);
+
+            console.log(`Listening to Firestore collection: artifacts/${appId}/all_applications`);
+
+            window.onSnapshot(q, (snapshot) => {
+                console.log("Firestore snapshot received. Number of documents:", snapshot.size);
+                const applicationsList = document.getElementById('applicationsList');
+                applicationsList.innerHTML = ''; // Clear existing list
+
+                if (snapshot.empty) {
+                    applicationsList.innerHTML = '<p class="text-center text-gray-600 mt-8">No applications submitted yet.</p>';
+                    console.log("No applications found in Firestore.");
+                    return;
+                }
+
+                snapshot.forEach((docSnap) => {
+                    const appData = docSnap.data();
+                    const docId = docSnap.id; // Document ID for this application in all_applications
+                    console.log(`Processing application: ${docId}, Status: ${appData.status}`);
+
+                    // Determine passport photo source
+                    const passportPhotoSrc = appData.passportPhotoUrl || 'https://placehold.co/100x100/e0e0e0/000000?text=No+Photo';
+                    const passportPhotoDisplay = appData.passportPhotoUrl ? `<img src="${passportPhotoSrc}" alt="Passport Photo" class="w-24 h-24 object-cover rounded-md mb-2">` : `<p class="text-sm text-gray-500">No photo uploaded</p>`;
+
+
+                    const appCard = document.createElement('div');
+                    appCard.className = 'bg-white p-6 rounded-lg shadow-md mb-4 border border-gray-200';
+                    appCard.innerHTML = `
+                        <div class="flex items-center mb-4">
+                            ${passportPhotoDisplay}
+                            <div class="ml-4">
+                                <h3 class="text-xl font-semibold text-gray-800">${appData.name || 'N/A'}</h3>
+                                <p class="text-sm text-gray-600"><strong>Applicant Email:</strong> ${appData.authEmail || 'N/A'}</p>
+                            </div>
+                        </div>
+
+                        <p class="text-sm text-gray-600 mb-1"><strong>Application Doc ID:</strong> ${docId}</p>
+                        <p class="text-sm text-gray-600 mb-1"><strong>Mobile:</strong> ${appData.mobileNumber || 'N/A'}</p>
+                        <p class="text-sm text-gray-600 mb-1"><strong>Force/AP Number:</strong> ${appData.forceApNumber || 'N/A'}</p>
+                        <p class="text-sm text-gray-600 mb-1"><strong>GPF Number:</strong> ${appData.gpfNumber || 'N/A'}</p>
+                        <p class="text-sm text-gray-600 mb-1"><strong>Employment Code:</strong> ${appData.employmentCode || 'N/A'}</p>
+                        <p class="text-sm text-gray-600 mb-1"><strong>Rank:</strong> ${appData.rank || 'N/A'}</p>
+                        <p class="text-sm text-gray-600 mb-1"><strong>Present Service Point:</strong> ${appData.presentServicePoint || 'N/A'}</p>
+                        <p class="text-sm text-gray-600 mb-1"><strong>Pay Point:</strong> ${appData.payPoint || 'N/A'}</p>
+                        <p class="text-sm text-gray-600 mb-1"><strong>Date of Enrolment:</strong> ${appData.dateOfEnrolment || 'N/A'}</p>
+                        <p class="text-sm text-gray-600 mb-1"><strong>Service Terminal Date:</strong> ${appData.serviceTerminalDate || 'N/A'}</p>
+                        <p class="text-sm text-gray-600 mb-1"><strong>Present Monthly Salary:</strong> ${appData.presentMonthlySalary || 'N/A'}</p>
+                        <p class="text-sm text-gray-600 mb-1"><strong>Net Monthly Salary:</strong> ${appData.netMonthlySalary || 'N/A'}</p>
+                        <p class="text-sm text-gray-600 mb-1"><strong>Previous Financial Commitments:</strong> ${appData.previousFinancialCommitments || 'N/A'}</p>
+                        <p class="text-sm text-gray-600 mb-1"><strong>Asset Details:</strong> ${appData.assetDetails || 'N/A'}</p>
+                        <p class="text-sm text-gray-600 mb-1"><strong>Submission Date:</strong> ${appData.submissionTimestamp ? new Date(appData.submissionTimestamp.seconds * 1000).toLocaleString() : 'N/A'}</p>
+
+
+                        <div class="mt-4 border-t pt-4 border-gray-100">
+                            <h4 class="text-md font-semibold text-gray-700 mb-2">Products Demanded:</h4>
+                            <ul class="list-disc list-inside text-sm text-gray-600 mb-3">
+                                ${appData.productsApplied && appData.productsApplied.length > 0 ?
+                                    appData.productsApplied.map(p => `<li>${p.name} (Installment: N${p.installmentPrice}, Repayment: N${p.monthlyRepayment})</li>`).join('')
+                                    : '<li>No products selected.</li>'
+                                }
+                            </ul>
+                            <p class="text-sm text-gray-600 mb-1"><strong>Total Cost of Assets:</strong> ${appData.totalCostAssets || 'N/A'}</p>
+                            <p class="text-sm text-gray-600 mb-1"><strong>Monthly Repayment (Words):</strong> ${appData.monthlyRepaymentWords || 'N/A'}</p>
+                        </div>
+
+                        <div class="mt-4 border-t pt-4 border-gray-100">
+                            <h4 class="text-md font-semibold text-gray-700 mb-2">Applicant Declaration:</h4>
+                            <p class="text-sm text-gray-600 mb-1"><strong>Declarant Name:</strong> ${appData.applicantDeclarationName || 'N/A'}</p>
+                            <p class="text-sm text-gray-600 mb-1"><strong>Applicant Signature:</strong> ${appData.applicantSignature || 'N/A'}</p>
+                            <p class="text-sm text-gray-600 mb-1"><strong>Declaration Date:</strong> ${appData.declarationDate || 'N/A'}</p>
+                        </div>
+
+                        <div class="mt-4 border-t pt-4 border-gray-100">
+                            <h4 class="text-md font-semibold text-gray-700 mb-2">Command Finance Office Certification:</h4>
+                            <p class="text-sm text-gray-600 mb-1"><strong>Command Name:</strong> ${appData.commandName || 'N/A'}</p>
+                            <p class="text-sm text-gray-600 mb-1"><strong>Command Position:</strong> ${appData.commandPosition || 'N/A'}</p>
+                            <p class="text-sm text-gray-600 mb-1"><strong>Command Rank:</strong> ${appData.commandRank || 'N/A'}</p>
+                            <p class="text-sm text-gray-600 mb-1"><strong>Command Signature:</strong> ${appData.commandSignature || 'N/A'}</p>
+                            <p class="text-sm text-gray-600 mb-1"><strong>Command Date:</strong> ${appData.commandDate || 'N/A'}</p>
+                        </div>
+
+                        <div class="mt-4 border-t pt-4 border-gray-100">
+                            <h4 class="text-md font-semibold text-gray-700 mb-2">Ambassador Information:</h4>
+                            <p class="text-sm text-gray-600 mb-1"><strong>Ambassador Name:</strong> ${appData.ambassadorName || 'N/A'}</p>
+                            <p class="text-sm text-gray-600 mb-1"><strong>Ambassador Mobile:</strong> ${appData.ambassadorMobile || 'N/A'}</p>
+                        </div>
+
+                        <p class="text-md font-bold mt-4">Status: <span id="status-${docId}" class="${appData.status === 'Approved' ? 'text-green-600' : appData.status === 'Denied' ? 'text-red-600' : 'text-yellow-600'}">${appData.status || 'Pending'}</span></p>
+
+                        <div class="mt-4 flex flex-col sm:flex-row gap-2">
+                            <button class="approve-btn bg-green-500 hover:bg-green-600 text-white py-2 px-4 rounded-md text-sm font-medium transition duration-150" data-id="${docId}" ${appData.status === 'Approved' ? 'disabled' : ''}>Approve</button>
+                            <button class="deny-btn bg-red-500 hover:bg-red-600 text-white py-2 px-4 rounded-md text-sm font-medium transition duration-150" data-id="${docId}" ${appData.status === 'Denied' ? 'disabled' : ''}>Deny</button>
+                        </div>
+                    `;
+                    applicationsList.appendChild(appCard);
+                });
+
+                // Attach event listeners to new buttons
+                document.querySelectorAll('.approve-btn').forEach(button => {
+                    button.onclick = (event) => updateApplicationStatus(event.target.dataset.id, 'Approved');
+                });
+                document.querySelectorAll('.deny-btn').forEach(button => {
+                    button.onclick = (event) => updateApplicationStatus(event.target.dataset.id, 'Denied');
+                });
+            }, (error) => {
+                console.error("Error fetching applications:", error);
+                window.showMessage('Error', 'Failed to load applications.', 'error');
+            });
+        }
+
+        async function updateApplicationStatus(id, status) {
+            if (!adminIsLoggedIn) {
+                window.showMessage('Access Denied', 'You must be logged in as an administrator to perform this action.', 'error');
+                return;
+            }
+
+            window.showMessage('Updating Status...', '<div class="loading-spinner"></div>', 'info');
+            try {
+                // Ensure db and appId are available from window object
+                const db = window.firebaseDb;
+                const appId = window.appId;
+
+                // IMPORTANT: Ensure your Firestore Security Rules allow update access to this path for 'admin@aro.co'
+                // Example rule:
+                // match /artifacts/{appId}/all_applications/{docId} {
+                //   allow read, update: if request.auth.token.email == 'admin@aro.co';
+                // }
+                const appDocRef = window.doc(db, `artifacts/${appId}/all_applications`, id);
+                await window.updateDoc(appDocRef, { status: status });
+                window.showMessage('Success', `Application ${id} status updated to ${status}.`, 'success');
+            } catch (error) {
+                console.error("Error updating document status:", error);
+                window.showMessage('Error', `Failed to update status for application ${id}.`, 'error');
+            }
+        }
+
+        // Initialize Firebase when the script loads
+        initializeFirebase();
+    </script>
+
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f0f2f5; /* Lighter background for admin panel */
+            color: #343a40;
+            line-height: 1.6;
+        }
+        .container {
+            max-width: 1000px; /* Wider for dashboard */
+            margin: 2rem auto;
+            padding: 2.5rem;
+            background-color: #ffffff;
+            border-radius: 12px;
+            box-shadow: 0 6px 20px rgba(0, 0, 0, 0.08);
+        }
+        .header-text {
+            font-size: 2.2rem;
+            font-weight: 800;
+            color: #212529;
+            text-align: center;
+            margin-bottom: 0.8rem;
+        }
+        .subheader-text {
+            font-size: 1.3rem;
+            font-weight: 500;
+            color: #6c757d;
+            text-align: center;
+            margin-bottom: 2.5rem;
+        }
+        .form-title-main {
+            font-size: 1.8rem;
+            font-weight: 700;
+            color: #343a40;
+            text-align: center;
+            margin-bottom: 2.5rem;
+            padding-bottom: 1rem;
+            border-bottom: 1px solid #dee2e6;
+        }
+        .form-group {
+            margin-bottom: 1.25rem;
+        }
+        .form-label {
+            display: block;
+            font-weight: 600;
+            color: #495057;
+            margin-bottom: 0.5rem;
+            font-size: 0.95rem;
+        }
+        .form-input {
+            width: 100%;
+            padding: 0.8rem 1rem;
+            border: 1px solid #ced4da;
+            border-radius: 6px;
+            font-size: 0.95rem;
+            color: #495057;
+            background-color: #f8f9fa;
+            transition: border-color 0.2s ease-in-out, box-shadow 0.2s ease-in-out;
+        }
+        .form-input:focus {
+            outline: none;
+            border-color: #007bff;
+            box-shadow: 0 0 0 0.2rem rgba(0, 123, 255, 0.25);
+            background-color: #ffffff;
+        }
+        .submit-button {
+            background-color: #007bff;
+            color: #fff;
+            padding: 0.9rem 2.2rem;
+            border-radius: 6px;
+            font-size: 1.05rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background-color 0.2s ease-in-out, transform 0.1s ease-in-out, box-shadow 0.2s ease-in-out;
+            border: none;
+            box-shadow: 0 4px 12px rgba(0, 123, 255, 0.25);
+        }
+        .submit-button:hover {
+            background-color: #0056b3;
+            transform: translateY(-1px);
+            box-shadow: 0 6px 15px rgba(0, 123, 255, 0.35);
+        }
+        .submit-button:active {
+            transform: translateY(0);
+            box-shadow: 0 2px 8px rgba(0, 123, 255, 0.2);
+        }
+        .logo {
+            max-width: 220px;
+            margin: 0 auto 2.5rem;
+        }
+
+        /* Dashboard specific styles */
+        #dashboardPage {
+            padding: 2rem;
+        }
+        #applicationsList {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 1.5rem;
+        }
+        .approve-btn[disabled], .deny-btn[disabled] {
+            opacity: 0.6;
+            cursor: not-allowed;
+            box-shadow: none;
+        }
+        .approve-btn[disabled]:hover, .deny-btn[disabled]:hover {
+            transform: none;
+            box-shadow: none;
+        }
+
+        /* Message Box Styles */
+        .message-box {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background-color: #ffffff;
+            border-radius: 8px;
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.15);
+            padding: 1.8rem;
+            z-index: 1000;
+            min-width: 300px;
+            max-width: 90%;
+            text-align: center;
+            opacity: 0;
+            visibility: hidden;
+            transition: opacity 0.3s ease-in-out, visibility 0.3s ease-in-out;
+        }
+        .message-box.show {
+            opacity: 1;
+            visibility: visible;
+        }
+        .message-box h4 {
+            font-size: 1.4rem;
+            font-weight: 700;
+            margin-bottom: 0.8rem;
+        }
+        .message-box p {
+            font-size: 0.95rem;
+            margin-bottom: 1.2rem;
+            color: #555;
+        }
+        .message-box.success h4 { color: #28a745; }
+        .message-box.error h4 { color: #dc3545; }
+        .message-box.info h4 { color: #17a2b8; }
+        .message-box button {
+            background-color: #6c757d;
+            color: #fff;
+            padding: 0.5rem 1.2rem;
+            border-radius: 5px;
+            border: none;
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+        .message-box button:hover {
+            background-color: #5a6268;
+        }
+        .overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.5);
+            z-index: 999;
+            opacity: 0;
+            visibility: hidden;
+            transition: opacity 0.3s ease-in-out, visibility 0.3s ease-in-out;
+        }
+        .overlay.show {
+            opacity: 1;
+            visibility: visible;
+        }
+        .loading-spinner {
+            border: 3px solid rgba(0, 123, 255, 0.2);
+            border-top: 3px solid #007bff;
+            border-radius: 50%;
+            width: 25px;
+            height: 25px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 1rem;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        /* Mobile specific adjustments */
+        @media (max-width: 767px) {
+            .container {
+                margin: 0.8rem;
+                padding: 1.5rem;
+            }
+            .header-text {
+                font-size: 1.9rem;
+                margin-bottom: 0.5rem;
+            }
+            .subheader-text {
+                font-size: 1.1rem;
+                margin-bottom: 2rem;
+            }
+            .form-title-main {
+                font-size: 1.5rem;
+                margin-bottom: 2rem;
+                padding-bottom: 0.8rem;
+            }
+            .form-group {
+                margin-bottom: 0.9rem;
+            }
+            .form-label {
+                font-size: 0.9rem;
+                margin-bottom: 0.3rem;
+            }
+            .form-input {
+                padding: 0.6rem 0.8rem;
+                font-size: 0.88rem;
+                border-radius: 5px;
+            }
+            .submit-button {
+                padding: 0.7rem 1.8rem;
+                font-size: 1rem;
+                border-radius: 5px;
+            }
+            #applicationsList {
+                grid-template-columns: 1fr;
+                gap: 1rem;
+            }
+        }
+    </style>
+</head>
+<body>
+    <!-- Login Page for Admin -->
+    <div id="loginPage" class="container" style="display: none;">
+        <div class="text-center mb-8">
+            <img src="download.png" alt="AROCOM Logo" class="logo">
+            <h1 class="header-text">AROCUM GLOBAL MERCHANDISE LIMITED</h1>
+            <h2 class="subheader-text">Admin Portal Login</h2>
+            <p class="form-title-main">Sign In to Manage Applications</p>
+        </div>
+
+        <div class="p-5 sm:p-7 border border-gray-200 rounded-xl shadow-sm">
+            <div class="form-group">
+                <label for="adminEmail" class="form-label">Email:</label>
+                <input type="email" id="adminEmail" class="form-input" placeholder="admin@aro.co" required>
+            </div>
+            <div class="form-group">
+                <label for="adminPassword" class="form-label">Password:</label>
+                <input type="password" id="adminPassword" class="form-input" placeholder="********" required>
+            </div>
+            <div class="form-group text-center mt-6">
+                <button type="button" id="adminLoginButton" class="submit-button !bg-blue-600 hover:!bg-blue-700">Log In</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Admin Dashboard Page -->
+    <div id="dashboardPage" class="container" style="display: none;">
+        <div class="text-center mb-8 sm:mb-10">
+            <img src="download.png" alt="AROCOM Logo" class="logo">
+            <h1 class="header-text">AROCUM GLOBAL MERCHANDISE LIMITED</h1>
+            <h2 class="subheader-text">Admin Dashboard</h2>
+            <p class="form-title-main">Manage Submitted Applications</p>
+            <button id="adminLogoutButton" class="submit-button !bg-red-600 hover:!bg-red-700 !text-sm !py-2 !px-4 mt-2">Log Out</button>
+        </div>
+
+        <div id="applicationsList" class="mt-8">
+            <!-- Applications will be loaded here dynamically -->
+            <p class="text-center text-gray-600">Loading applications...</p>
+        </div>
+    </div>
+
+    <!-- Message Box and Overlay -->
+    <div id="overlay" class="overlay"></div>
+    <div id="messageBox" class="message-box">
+        <div id="messageBoxContent"></div>
+        <button id="messageBoxClose">OK</button>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            console.log("DOM Content Loaded for Admin Dashboard.");
+            // --- Admin Authentication Logic ---
+            const adminEmailInput = document.getElementById('adminEmail');
+            const adminPasswordInput = document.getElementById('adminPassword');
+            const adminLoginButton = document.getElementById('adminLoginButton');
+            const adminLogoutButton = document.getElementById('adminLogoutButton');
+
+            adminLoginButton.addEventListener('click', async () => {
+                const email = adminEmailInput.value;
+                const password = adminPasswordInput.value;
+                console.log("Admin login button clicked.");
+
+                if (!email || !password) {
+                    window.showMessage('Input Error', 'Please enter both email and password.', 'error');
+                    console.log("Login input error: Email or password missing.");
+                    return;
+                }
+
+                if (email !== 'admin@aro.co') { // Basic client-side check for admin email
+                    window.showMessage('Login Failed', 'Invalid administrator email.', 'error');
+                    console.log("Login failed: Invalid admin email entered.");
+                    return;
+                }
+
+                window.showMessage('Logging In...', '<div class="loading-spinner"></div>', 'info');
+                try {
+                    console.log(`Attempting to sign in with email: ${email}`);
+                    // Use window.firebaseAuth and window.signInWithEmailAndPassword
+                    const userCredential = await window.signInWithEmailAndPassword(window.firebaseAuth, email, password);
+                    console.log("Firebase signInWithEmailAndPassword successful.", userCredential.user.uid);
+                    // onAuthStateChanged will handle showing the dashboard if login is successful and it's the admin email
+                    window.showMessage('Success', 'Logged in as administrator!', 'success');
+                } catch (error) {
+                    console.error("Admin Login Error:", error);
+                    window.showMessage('Login Failed', error.message, 'error');
+                }
+            });
+
+            adminLogoutButton.addEventListener('click', async () => {
+                console.log("Admin logout button clicked.");
+                try {
+                    // Use window.firebaseAuth and window.signOut
+                    await window.signOut(window.firebaseAuth);
+                    console.log("Firebase signOut successful.");
+                    window.showMessage('Logged Out', 'You have been successfully logged out from the admin panel.', 'info');
+                    // onAuthStateChanged will handle showing the login page
+                } catch (error) {
+                    console.error("Admin Logout Error:", error);
+                    window.showMessage('Logout Failed', error.message, 'error');
+                }
+            });
+        });
+    </script>
+</body>
+</html>
