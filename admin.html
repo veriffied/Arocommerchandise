@@ -4,8 +4,10 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>AROCUM Admin Dashboard</title>
+    <!-- Tailwind CSS CDN -->
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <!-- Firebase SDKs and all consolidated JavaScript -->
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import {
@@ -20,9 +22,11 @@
             query,
             onSnapshot,
             doc,
-            updateDoc
+            updateDoc,
+            deleteDoc // Import deleteDoc
         } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
+        // Your specific Firebase configuration
         const firebaseConfig = {
             apiKey: "AIzaSyCpDryn8F6WS4oCbjX0hMTKbUP-jO2y1ds",
             authDomain: "arocom-acce1.firebaseapp.com",
@@ -36,26 +40,36 @@
         const appId = firebaseConfig.appId;
 
         let app, db, auth;
-        let adminIsLoggedIn = false;
+        let adminIsLoggedIn = false; // Track admin login state
 
+        // --- UI State Management ---
         window.showLoginPage = function() {
+            console.log("Attempting to show login page.");
             const loginPage = document.getElementById('loginPage');
             const dashboardPage = document.getElementById('dashboardPage');
             if (loginPage && dashboardPage) {
                 loginPage.style.display = 'block';
                 dashboardPage.style.display = 'none';
+                console.log("Login page displayed.");
+            } else {
+                console.error("Login page elements not found for display.");
             }
         }
 
         window.showDashboardPage = function() {
+            console.log("Attempting to show dashboard page.");
             const loginPage = document.getElementById('loginPage');
             const dashboardPage = document.getElementById('dashboardPage');
             if (loginPage && dashboardPage) {
                 loginPage.style.display = 'none';
                 dashboardPage.style.display = 'block';
+                console.log("Dashboard page displayed.");
+            } else {
+                console.error("Dashboard page elements not found for display.");
             }
         }
 
+        // Custom message box function
         window.showMessage = function(title, message, type) {
             const messageBox = document.getElementById('messageBox');
             const overlay = document.getElementById('overlay');
@@ -71,45 +85,13 @@
                     overlay.className = 'overlay';
                 };
             } else {
-                alert(`${title}\n${message}`);
+                console.error("Message box elements not found. Cannot display custom message.");
+                alert(`${title}\n${message}`); // Fallback to alert if message box elements aren't ready
             }
         }
 
-        async function initializeFirebase() {
-            try {
-                app = initializeApp(firebaseConfig);
-                db = getFirestore(app);
-                auth = getAuth(app);
-
-                window.firebaseApp = app;
-                window.firebaseDb = db;
-                window.firebaseAuth = auth;
-                window.signInWithEmailAndPassword = signInWithEmailAndPassword;
-                window.signOut = signOut;
-                window.collection = collection;
-                window.query = query;
-                window.onSnapshot = onSnapshot;
-                window.doc = doc;
-                window.updateDoc = updateDoc;
-                window.appId = appId;
-
-                onAuthStateChanged(auth, (user) => {
-                    if (user && user.email === 'admin@aro.co') {
-                        adminIsLoggedIn = true;
-                        window.showDashboardPage();
-                        fetchApplications();
-                        loadAdminDetails();
-                    } else {
-                        adminIsLoggedIn = false;
-                        window.showLoginPage();
-                    }
-                });
-            } catch (error) {
-                window.showMessage('Error', 'Failed to initialize application. Please try again later.', 'error');
-            }
-        }
-
-        function saveAdminDetails() {
+        // Functions to save/load admin details from local storage
+        window.saveAdminDetails = function() {
             const adminDetails = {
                 name: document.getElementById('adminName').value,
                 position: document.getElementById('adminPosition').value,
@@ -118,9 +100,10 @@
             };
             localStorage.setItem('arocomAdminDetails', JSON.stringify(adminDetails));
             window.showMessage('Saved', 'Your admin details have been saved locally.', 'success');
+            console.log("Admin details saved:", adminDetails);
         }
 
-        function loadAdminDetails() {
+        window.loadAdminDetails = function() {
             const savedDetails = localStorage.getItem('arocomAdminDetails');
             if (savedDetails) {
                 const adminDetails = JSON.parse(savedDetails);
@@ -128,11 +111,15 @@
                 document.getElementById('adminPosition').value = adminDetails.position || '';
                 document.getElementById('adminRank').value = adminDetails.rank || '';
                 document.getElementById('adminSignature').value = adminDetails.signature || '';
+                console.log("Admin details loaded from local storage.");
             }
         }
 
-        function fetchApplications() {
+        // Function to fetch and display applications
+        window.fetchApplications = function() {
+            console.log("Attempting to fetch applications. Admin logged in:", adminIsLoggedIn);
             if (!adminIsLoggedIn) {
+                console.log("Not logged in as admin. Cannot fetch applications.");
                 return;
             }
 
@@ -142,22 +129,29 @@
             const allApplicationsCollectionRef = window.collection(db, `artifacts/${appId}/all_applications`);
             const q = window.query(allApplicationsCollectionRef);
 
+            console.log(`Listening to Firestore collection: artifacts/${appId}/all_applications`);
+
             window.onSnapshot(q, (snapshot) => {
+                console.log("Firestore snapshot received. Number of documents:", snapshot.size);
                 const applicationsList = document.getElementById('applicationsList');
-                applicationsList.innerHTML = '';
+                applicationsList.innerHTML = ''; // Clear existing list
 
                 if (snapshot.empty) {
                     applicationsList.innerHTML = '<p class="text-center text-gray-600 mt-8">No applications submitted yet.</p>';
+                    console.log("No applications found in Firestore.");
                     return;
                 }
 
                 snapshot.forEach((docSnap) => {
                     const appData = docSnap.data();
-                    const docId = docSnap.id;
+                    const docId = docSnap.id; // Document ID for this application in all_applications
+                    console.log(`Processing application: ${docId}, Status: ${appData.status}`);
 
+                    // Determine passport photo source
                     const passportPhotoSrc = appData.passportPhotoUrl || 'https://placehold.co/100x100/e0e0e0/000000?text=No+Photo';
                     const passportPhotoDisplay = appData.passportPhotoUrl ? `<img src="${passportPhotoSrc}" alt="Passport Photo" class="w-24 h-24 object-cover rounded-md mb-2">` : `<p class="text-sm text-gray-500">No photo uploaded</p>`;
 
+                    // Get processed by information
                     let processedByInfo = '';
                     if (appData.processedByEmail) {
                         processedByInfo += `Processed by: ${appData.processedByEmail}`;
@@ -242,77 +236,192 @@
                     applicationsList.appendChild(appCard);
                 });
 
+                // Attach event listeners to new buttons
                 document.querySelectorAll('.approve-btn').forEach(button => {
-                    button.onclick = (event) => updateApplicationStatus(event.target.dataset.id, 'Approved');
+                    button.onclick = (event) => window.updateApplicationStatus(event.target.dataset.id, 'Approved');
                 });
                 document.querySelectorAll('.deny-btn').forEach(button => {
-                    button.onclick = (event) => updateApplicationStatus(event.target.dataset.id, 'Denied');
+                    button.onclick = (event) => window.updateApplicationStatus(event.target.dataset.id, 'Denied');
                 });
             }, (error) => {
+                console.error("Error fetching applications:", error);
                 window.showMessage('Error', 'Failed to load applications.', 'error');
             });
         }
 
-        async function updateApplicationStatus(id, status) {
+        window.updateApplicationStatus = async function(id, status) {
+            // NEW: Check if Firebase instances are ready
+            if (!window.firebaseDb || !window.firebaseAuth) {
+                window.showMessage('Initialization Error', 'Application is still initializing. Please wait a moment and try again.', 'info');
+                console.error("Firebase DB or Auth not initialized when updateApplicationStatus was called.");
+                return;
+            }
+
             if (!adminIsLoggedIn) {
                 window.showMessage('Access Denied', 'You must be logged in as an administrator to perform this action.', 'error');
                 return;
             }
 
+            // Get admin details from the new input fields
             const adminName = document.getElementById('adminName').value;
             const adminPosition = document.getElementById('adminPosition').value;
             const adminRank = document.getElementById('adminRank').value;
             const adminSignature = document.getElementById('adminSignature').value;
 
+            // --- Validation for Admin Details ---
             if (!adminName || !adminPosition || !adminRank || !adminSignature) {
                 window.showMessage('Admin Details Required', 'Please fill in your Name, Position, Rank, and Signature in the "Your Admin Details" section before approving or denying applications.', 'error');
+                // Optionally, highlight the empty fields
                 if (!adminName) document.getElementById('adminName').classList.add('border-red-500'); else document.getElementById('adminName').classList.remove('border-red-500');
                 if (!adminPosition) document.getElementById('adminPosition').classList.add('border-red-500'); else document.getElementById('adminPosition').classList.remove('border-red-500');
                 if (!adminRank) document.getElementById('adminRank').classList.add('border-red-500'); else document.getElementById('adminRank').classList.remove('border-red-500');
                 if (!adminSignature) document.getElementById('adminSignature').classList.add('border-red-500'); else document.getElementById('adminSignature').classList.remove('border-red-500');
                 return;
             } else {
+                // Remove highlighting if fields are now filled
                 document.getElementById('adminName').classList.remove('border-red-500');
                 document.getElementById('adminPosition').classList.remove('border-red-500');
                 document.getElementById('adminRank').classList.remove('border-red-500');
                 document.getElementById('adminSignature').classList.remove('border-red-500');
             }
+            // --- END Validation for Admin Details ---
 
+            // Get the email of the currently logged-in admin
             const adminEmail = window.firebaseAuth.currentUser ? window.firebaseAuth.currentUser.email : 'unknown@example.com';
 
-            window.showMessage('Updating Status...', '<div class="loading-spinner"></div>', 'info');
+            window.showMessage('Processing...', '<div class="loading-spinner"></div>', 'info');
             try {
                 const db = window.firebaseDb;
                 const appId = window.appId;
-
                 const appDocRef = window.doc(db, `artifacts/${appId}/all_applications`, id);
-                await window.updateDoc(appDocRef, {
-                    status: status,
-                    processedByEmail: adminEmail,
-                    processedByName: adminName,
-                    processedByPosition: adminPosition,
-                    processedByRank: adminRank,
-                    processedBySignature: adminSignature,
-                    processedTimestamp: new Date()
-                });
-                window.showMessage('Success', `Application ${id} status updated to ${status}.`, 'success');
+
+                if (status === 'Denied') {
+                    // If status is Denied, delete the document
+                    await window.deleteDoc(appDocRef); // Use deleteDoc
+                    window.showMessage('Success', `Application ${id} has been denied and removed from the board.`, 'success');
+                    console.log(`Application ${id} denied and deleted.`);
+                } else {
+                    // Otherwise, just update the status (for 'Approved')
+                    await window.updateDoc(appDocRef, {
+                        status: status,
+                        processedByEmail: adminEmail,
+                        processedByName: adminName,
+                        processedByPosition: adminPosition,
+                        processedByRank: adminRank,
+                        processedBySignature: adminSignature,
+                        processedTimestamp: new Date()
+                    });
+                    window.showMessage('Success', `Application ${id} status updated to ${status}.`, 'success');
+                    console.log(`Application ${id} status updated to ${status}.`);
+                }
             } catch (error) {
-                window.showMessage('Error', `Failed to update status for application ${id}.`, 'error');
+                console.error("Error processing application status:", error);
+                window.showMessage('Error', `Failed to update/delete application ${id}. Error: ${error.message}`, 'error');
             }
         }
 
+        async function initializeFirebase() {
+            try {
+                app = initializeApp(firebaseConfig);
+                db = getFirestore(app);
+                auth = getAuth(app);
+
+                window.firebaseApp = app;
+                window.firebaseDb = db;
+                window.firebaseAuth = auth;
+                window.signInWithEmailAndPassword = signInWithEmailAndPassword;
+                window.signOut = signOut;
+                window.collection = collection;
+                window.query = query;
+                window.onSnapshot = onSnapshot;
+                window.doc = doc;
+                window.updateDoc = updateDoc;
+                window.deleteDoc = deleteDoc; // Expose deleteDoc
+                window.appId = appId;
+
+                onAuthStateChanged(auth, (user) => {
+                    if (user && user.email === 'admin@aro.co') {
+                        adminIsLoggedIn = true;
+                        window.showDashboardPage();
+                        window.fetchApplications(); // Call through window
+                        window.loadAdminDetails(); // Call through window
+                    } else {
+                        adminIsLoggedIn = false;
+                        window.showLoginPage();
+                    }
+                });
+            } catch (error) {
+                console.error("Error initializing Firebase:", error);
+                window.showMessage('Error', 'Failed to initialize application. Please try again later.', 'error');
+            }
+        }
+
+        // Initialize Firebase when the script loads
         initializeFirebase();
+
+        // DOMContentLoaded listener now safely accesses global functions
+        document.addEventListener('DOMContentLoaded', function() {
+            console.log("DOM Content Loaded for Admin Dashboard.");
+            const adminEmailInput = document.getElementById('adminEmail');
+            const adminPasswordInput = document.getElementById('adminPassword');
+            const adminLoginButton = document.getElementById('adminLoginButton');
+            const adminLogoutButton = document.getElementById('adminLogoutButton');
+            const saveAdminDetailsButton = document.getElementById('saveAdminDetailsButton');
+
+            adminLoginButton.addEventListener('click', async () => {
+                const email = adminEmailInput.value;
+                const password = adminPasswordInput.value;
+                console.log("Admin login button clicked.");
+
+                if (!email || !password) {
+                    window.showMessage('Input Error', 'Please enter both email and password.', 'error');
+                    console.log("Login input error: Email or password missing.");
+                    return;
+                }
+
+                if (email !== 'admin@aro.co') {
+                    window.showMessage('Login Failed', 'Invalid administrator email.', 'error');
+                    console.log("Login failed: Invalid admin email entered.");
+                    return;
+                }
+
+                window.showMessage('Logging In...', '<div class="loading-spinner"></div>', 'info');
+                try {
+                    console.log(`Attempting to sign in with email: ${email}`);
+                    await window.signInWithEmailAndPassword(window.firebaseAuth, email, password);
+                    console.log("Firebase signInWithEmailAndPassword successful.");
+                    window.showMessage('Success', 'Logged in as administrator!', 'success');
+                } catch (error) {
+                    console.error("Admin Login Error:", error);
+                    window.showMessage('Login Failed', error.message, 'error');
+                }
+            });
+
+            adminLogoutButton.addEventListener('click', async () => {
+                console.log("Admin logout button clicked.");
+                try {
+                    await window.signOut(window.firebaseAuth);
+                    console.log("Firebase signOut successful.");
+                    window.showMessage('Logged Out', 'You have been successfully logged out from the admin panel.', 'info');
+                } catch (error) {
+                    console.error("Admin Logout Error:", error);
+                    window.showMessage('Logout Failed', error.message, 'error');
+                }
+            });
+
+            saveAdminDetailsButton.addEventListener('click', window.saveAdminDetails);
+        });
     </script>
 
     <style>
         body {
             font-family: 'Inter', sans-serif;
-            background-color: #f0f2f5;
+            background-color: #f0f2f5; /* Lighter background for admin panel */
             color: #343a40;
             line-height: 1.6;
         }
         .container {
-            max-width: 1000px;
+            max-width: 1000px; /* Wider for dashboard */
             margin: 2rem auto;
             padding: 2.5rem;
             background-color: #ffffff;
@@ -537,7 +646,7 @@
 <body>
     <div id="loginPage" class="container" style="display: none;">
         <div class="text-center mb-8">
-            <img src="download.png" alt="AROCOM Logo" class="logo">
+            <img src="image_47bf54.png" alt="AROCOM Logo" class="logo">
             <h1 class="header-text">AROCUM GLOBAL MERCHANDISE LIMITED</h1>
             <h2 class="subheader-text">Admin Portal Login</h2>
             <p class="form-title-main">Sign In to Manage Applications</p>
@@ -560,7 +669,7 @@
 
     <div id="dashboardPage" class="container" style="display: none;">
         <div class="text-center mb-8 sm:mb-10">
-            <img src="download.png" alt="AROCOM Logo" class="logo">
+            <img src="image_47bf54.png" alt="AROCOM Logo" class="logo">
             <h1 class="header-text">AROCUM GLOBAL MERCHANDISE LIMITED</h1>
             <h2 class="subheader-text">Admin Dashboard</h2>
             <p class="form-title-main">Manage Submitted Applications</p>
